@@ -2,10 +2,16 @@
 
 [English](./README.md) | [中文](./README.zh-CN.md)
 
-Put local test audio clips here.
+This folder stores sample guidance for local testing.
 
-Recommended Day 1 sample:
-- 30-60 seconds
-- single electric guitar as clear as possible
-- funk, pop, or blues
-- avoid dense backing tracks for the first pass
+## Structure
+
+- `samples/raw/`: original local video or mixed audio input
+
+## Recommended input style
+
+- 30 to 60 second clips
+- electric guitar phrases or short solos
+- clips that may still contain drums or backing instruments
+
+If you want to validate the real pipeline, put your source clip into `samples/raw/`.

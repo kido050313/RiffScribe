@@ -2,40 +2,53 @@
 
 [English](./README.md) | [中文](./README.zh-CN.md)
 
-这个目录用于放置基于 Python 的音频分析原型。
+这个目录放的是 Python 侧的音频处理流水线。
 
-计划职责：
-- 从 `samples/` 或预处理输出目录读取音频
-- 从本地视频中提取可供分析的音频
-- 为电吉他分析执行音源分离
-- 估计时长、BPM、拍点与小节
-- 检测基础音高事件
-- 将标准化后的分析 JSON 写入 `output/`
+## 主要职责
 
-Day 1 状态：
-- `main.py` 会写出一个占位版 `analysis-result.json`
-- Day 2 开始接入真实音频处理
+- 从本地视频或混合音频中提取 wav
+- 运行 Demucs 分离
+- 把音频分析成 BPM、拍点、小节和音符事件
+- 将标准化 JSON 写入 `output/analysis/`
 
-Day 2 用法：
-- 使用 `python -m venv .venv` 创建项目级虚拟环境
-- 使用 `.\.venv\Scripts\python.exe -m pip install -r analyzer/requirements.txt` 安装依赖
-- 将音频片段放入 `samples/`，或通过 `--input` 传入路径
-- 运行 `.\.venv\Scripts\python.exe analyzer/main.py`
-- 可选：运行 `.\.venv\Scripts\python.exe analyzer/main.py --input samples/your-clip.wav --output output/your-analysis.json`
+## 主要脚本
 
-Day 2.1 目标：
-- 增加本地视频输入的预处理支持
-- 在分析前先提取 wav 音频
-- 对比“原始混音音频”和“分离后 stem”的分析效果
+- `extract.py`：把本地媒体转换为可分析的 wav
+- `separate.py`：通过 Demucs Python API 做分离，并用 `soundfile` 保存 stem
+- `main.py`：把单个音频文件分析成 JSON 音符事件
+- `pipeline.py`：一条命令串起提音、分离和分析
 
-Day 2.1 命令：
-- 运行 `.\.venv\Scripts\python.exe analyzer/extract.py`，从 `samples/raw/` 提取 wav 音频
-- 可选：运行 `.\.venv\Scripts\python.exe analyzer/extract.py --input samples/raw/your-video.mp4`
-- 使用 `.\.venv\Scripts\python.exe -m pip install -r analyzer/requirements.txt` 安装分离依赖
-- 运行 `.\.venv\Scripts\python.exe analyzer/separate.py`，从 `output/extracted/` 生成 stem
-- 运行 `.\.venv\Scripts\python.exe analyzer/pipeline.py --input samples/raw/your-video.mp4 --fallback-to-extracted`，一条命令完成提音、分离和分析
+## 推荐使用方式
 
-面向电吉他的推荐流程：
-- 默认使用 4-stem 分离，不再优先使用 `--two-stems vocals`
-- 优先把 `other.wav` 当作电吉他候选 stem
-- 只有在分离结果明显不可用时，再回退到提取出来的原始混音音频
+先创建并使用项目虚拟环境：
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r analyzer/requirements.txt
+```
+
+运行完整流水线：
+
+```powershell
+.\.venv\Scripts\python.exe analyzer/pipeline.py --input samples/raw/test1.mp4 --fallback-to-extracted
+```
+
+## 当前的重要约定
+
+- 默认采用完整 4-stem 分离，不再优先使用 `--two-stems vocals`
+- `other.wav` 被视为第一优先级的电吉他候选 stem
+- 如果分离效果不可用，pipeline 可以回退到提取出的混合音频继续分析
+
+## 正常输出结果
+
+运行 pipeline 后，你应该能看到：
+- `output/extracted/` 中的提取 wav
+- `output/separated/` 中的 stem
+- `output/analysis/` 中的分析 JSON
+
+## 已验证示例
+
+- 输入：`samples/raw/test1.mp4`
+- 提取音频：`output/extracted/test1.wav`
+- 优先使用的 stem：`output/separated/htdemucs/test1/other.wav`
+- 分析输出：`output/analysis/test1.analysis.json`
