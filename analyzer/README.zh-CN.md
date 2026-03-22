@@ -34,3 +34,8 @@ Day 2.1 命令：
 - 使用 `.\.venv\Scripts\python.exe -m pip install -r analyzer/requirements.txt` 安装分离依赖
 - 运行 `.\.venv\Scripts\python.exe analyzer/separate.py`，从 `output/extracted/` 生成 stem
 - 运行 `.\.venv\Scripts\python.exe analyzer/pipeline.py --input samples/raw/your-video.mp4 --fallback-to-extracted`，一条命令完成提音、分离和分析
+
+面向电吉他的推荐流程：
+- 默认使用 4-stem 分离，不再优先使用 `--two-stems vocals`
+- 优先把 `other.wav` 当作电吉他候选 stem
+- 只有在分离结果明显不可用时，再回退到提取出来的原始混音音频

@@ -113,8 +113,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--two-stems",
-        default="vocals",
-        help="Optional Demucs two-stem mode. Defaults to vocals.",
+        default=None,
+        help="Optional Demucs two-stem mode. Defaults to full 4-stem separation.",
     )
     parser.add_argument(
         "--sample-rate",

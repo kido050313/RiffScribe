@@ -34,3 +34,8 @@ Day 2.1 commands:
 - install separation tools with `.\.venv\Scripts\python.exe -m pip install -r analyzer/requirements.txt`
 - run `.\.venv\Scripts\python.exe analyzer/separate.py` to create stems from `output/extracted/`
 - run `.\.venv\Scripts\python.exe analyzer/pipeline.py --input samples/raw/your-video.mp4 --fallback-to-extracted` to execute extraction, separation, and analysis in one command
+
+Recommended guitar workflow:
+- use the default 4-stem separation instead of `--two-stems vocals`
+- prefer `other.wav` as the first guitar candidate stem
+- fall back to the extracted mix only when the separated stems sound unusable
