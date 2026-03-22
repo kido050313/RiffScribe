@@ -4,3 +4,4 @@ scipy
 soundfile
 basic-pitch
 demucs
+mido

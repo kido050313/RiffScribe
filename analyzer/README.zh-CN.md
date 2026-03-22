@@ -17,6 +17,7 @@
 - `separate.py`：通过 Demucs Python API 做分离，并用 `soundfile` 保存 stem
 - `main.py`：把单个音频文件分析成 JSON 音符事件
 - `pipeline.py`：一条命令串起提音、分离和分析
+- `export.py`：把分析 JSON 导出成 MIDI 和 MusicXML
 
 ## 推荐使用方式
 
@@ -33,6 +34,12 @@ python -m venv .venv
 .\.venv\Scripts\python.exe analyzer/pipeline.py --input samples/raw/test1.mp4 --fallback-to-extracted
 ```
 
+导出 MIDI 和 MusicXML：
+
+```powershell
+.\.venv\Scripts\python.exe analyzer/export.py --input output/analysis/test1.analysis.json
+```
+
 ## 当前的重要约定
 
 - 默认采用完整 4-stem 分离，不再优先使用 `--two-stems vocals`
@@ -45,6 +52,7 @@ python -m venv .venv
 - `output/extracted/` 中的提取 wav
 - `output/separated/` 中的 stem
 - `output/analysis/` 中的分析 JSON
+- `output/exports/` 中的 MIDI 和 MusicXML
 
 ## 已验证示例
 
@@ -52,3 +60,5 @@ python -m venv .venv
 - 提取音频：`output/extracted/test1.wav`
 - 优先使用的 stem：`output/separated/htdemucs/test1/other.wav`
 - 分析输出：`output/analysis/test1.analysis.json`
+- MIDI 导出：`output/exports/test1.mid`
+- MusicXML 导出：`output/exports/test1.musicxml`

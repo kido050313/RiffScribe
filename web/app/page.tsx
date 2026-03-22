@@ -1,15 +1,51 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { currentAnalysis } from "../lib/current-analysis";
-import type { NoteEvent } from "../types/analysis";
+import type { AnalysisResult, NoteEvent } from "../types/analysis";
 
 type DragState = {
   noteId: string;
   pointerStartX: number;
   noteStart: number;
   noteEnd: number;
+};
+
+type ExportFormat = "midi" | "musicxml";
+
+type SavedProject = {
+  version: 1;
+  savedAt: string;
+  analysis: AnalysisResult;
+  loopEnabled: boolean;
+  loopStart: number;
+  loopEnd: number;
+  selectedNoteId: string | null;
+};
+
+const PROJECT_STORAGE_KEY = "guitar-poc-project-v1";
+
+type MetricCardProps = {
+  label: string;
+  value: string;
+};
+
+type LegendSwatchProps = {
+  color: string;
+  label: string;
+};
+
+type FieldEditorProps = {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+};
+
+type StatusMessageProps = {
+  message: string;
+  error?: boolean;
 };
 
 export default function HomePage() {
@@ -24,9 +60,13 @@ export default function HomePage() {
   const [loopStart, setLoopStart] = useState(0);
   const [loopEnd, setLoopEnd] = useState(Math.min(currentAnalysis.durationSec || 1, 4));
   const [dragState, setDragState] = useState<DragState | null>(null);
+  const [exportingFormat, setExportingFormat] = useState<ExportFormat | null>(null);
+  const [exportMessage, setExportMessage] = useState<string | null>(null);
+  const [projectMessage, setProjectMessage] = useState<string | null>(null);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const timelineRef = useRef<HTMLDivElement | null>(null);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
 
   const duration = currentAnalysis.durationSec || 1;
   const previewNotes = notes.slice(0, 12);
@@ -40,6 +80,21 @@ export default function HomePage() {
     notes.find((note) => currentTime >= note.start && currentTime <= note.end + 0.03) ?? null;
   const selectedNote = activePlaybackNote ?? manuallySelectedNote;
 
+  const analysisForExport: AnalysisResult = {
+    ...currentAnalysis,
+    notes,
+  };
+
+  const currentProject: SavedProject = {
+    version: 1,
+    savedAt: new Date().toISOString(),
+    analysis: analysisForExport,
+    loopEnabled,
+    loopStart,
+    loopEnd,
+    selectedNoteId,
+  };
+
   const updateNoteById = (noteId: string, updater: (note: NoteEvent) => NoteEvent) => {
     setNotes((currentNotes) =>
       currentNotes.map((note) => (note.id === noteId ? updater(note) : note)),
@@ -51,26 +106,19 @@ export default function HomePage() {
     if (!baseNote) {
       return;
     }
-
     const parsedValue = Number(rawValue);
     if (Number.isNaN(parsedValue)) {
       return;
     }
 
     updateNoteById(baseNote.id, (note) => {
-      const nextNote = {
-        ...note,
-        [field]: parsedValue,
-      } as NoteEvent;
-
+      const nextNote = { ...note, [field]: parsedValue } as NoteEvent;
       if (field === "start" && nextNote.end < nextNote.start) {
         nextNote.end = nextNote.start;
       }
-
       if (field === "end" && nextNote.end < nextNote.start) {
         nextNote.start = nextNote.end;
       }
-
       return nextNote;
     });
   };
@@ -78,6 +126,11 @@ export default function HomePage() {
   const resetNotes = () => {
     setNotes(currentAnalysis.notes);
     setSelectedNoteId(currentAnalysis.notes[0]?.id ?? null);
+    setLoopEnabled(false);
+    setLoopStart(0);
+    setLoopEnd(Math.min(currentAnalysis.durationSec || 1, 4));
+    setExportMessage("已恢复为原始分析结果。");
+    setProjectMessage(null);
   };
 
   const jumpToTime = (time: number) => {
@@ -85,7 +138,6 @@ export default function HomePage() {
     if (!audio) {
       return;
     }
-
     audio.currentTime = Math.max(0, Math.min(time, duration));
     setCurrentTime(audio.currentTime);
   };
@@ -101,7 +153,6 @@ export default function HomePage() {
     if (!manuallySelectedNote) {
       return;
     }
-
     clampLoop(
       Math.max(0, manuallySelectedNote.start - 0.15),
       Math.min(duration, manuallySelectedNote.end + 0.15),
@@ -113,12 +164,10 @@ export default function HomePage() {
     if (!selectedNote) {
       return;
     }
-
     const measure = currentAnalysis.measures[selectedNote.measureIndex];
     if (!measure) {
       return;
     }
-
     clampLoop(measure.start, Math.min(measure.end, duration));
     setLoopEnabled(true);
   };
@@ -128,7 +177,6 @@ export default function HomePage() {
     if (!timeline) {
       return;
     }
-
     const rect = timeline.getBoundingClientRect();
     const ratio = (clientX - rect.left) / rect.width;
     jumpToTime(ratio * duration);
@@ -139,19 +187,114 @@ export default function HomePage() {
     if (!audio) {
       return;
     }
-
     if (audio.paused) {
       setAudioError(null);
       try {
         await audio.play();
       } catch (error) {
-        const message = error instanceof Error ? error.message : "未知音频播放错误";
+        const message = error instanceof Error ? error.message : "未知音频播放错误。";
         setAudioError(message);
       }
       return;
     }
-
     audio.pause();
+  };
+
+  const handleExport = async (format: ExportFormat) => {
+    try {
+      setExportingFormat(format);
+      setExportMessage(null);
+      const response = await fetch("/api/export", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ analysis: analysisForExport, format }),
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(payload?.error ?? "导出失败。");
+      }
+      const blob = await response.blob();
+      const extension = format === "midi" ? "mid" : "musicxml";
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `guitar-draft.${extension}`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      setExportMessage(`已开始下载 ${format === "midi" ? "MIDI" : "MusicXML"} 文件。`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "导出失败。";
+      setExportMessage(message);
+    } finally {
+      setExportingFormat(null);
+    }
+  };
+
+  const applyProject = (project: SavedProject) => {
+    setNotes(project.analysis.notes);
+    setSelectedNoteId(project.selectedNoteId ?? project.analysis.notes[0]?.id ?? null);
+    setLoopEnabled(project.loopEnabled);
+    setLoopStart(project.loopStart);
+    setLoopEnd(project.loopEnd);
+  };
+
+  const saveProjectToBrowser = () => {
+    try {
+      window.localStorage.setItem(PROJECT_STORAGE_KEY, JSON.stringify(currentProject));
+      setProjectMessage("已保存到当前浏览器。");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "浏览器保存失败。";
+      setProjectMessage(message);
+    }
+  };
+
+  const restoreProjectFromBrowser = () => {
+    try {
+      const raw = window.localStorage.getItem(PROJECT_STORAGE_KEY);
+      if (!raw) {
+        setProjectMessage("当前浏览器里还没有已保存工程。");
+        return;
+      }
+      applyProject(JSON.parse(raw) as SavedProject);
+      setProjectMessage("已从浏览器恢复工程。");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "恢复浏览器工程失败。";
+      setProjectMessage(message);
+    }
+  };
+
+  const downloadProjectFile = () => {
+    try {
+      const blob = new Blob([JSON.stringify(currentProject, null, 2)], {
+        type: "application/json",
+      });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "guitar-project.json";
+      anchor.click();
+      URL.revokeObjectURL(url);
+      setProjectMessage("已导出工程文件。");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "导出工程文件失败。";
+      setProjectMessage(message);
+    }
+  };
+
+  const handleImportProject = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+    try {
+      applyProject(JSON.parse(await file.text()) as SavedProject);
+      setProjectMessage("已导入工程文件。");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "导入工程文件失败。";
+      setProjectMessage(message);
+    } finally {
+      event.target.value = "";
+    }
   };
 
   useEffect(() => {
@@ -159,7 +302,6 @@ export default function HomePage() {
     if (!audio) {
       return;
     }
-
     const handleTimeUpdate = () => {
       if (loopEnabled && audio.currentTime >= loopEnd) {
         audio.currentTime = loopStart;
@@ -193,34 +335,29 @@ export default function HomePage() {
     if (!dragState) {
       return;
     }
-
     const handlePointerMove = (event: PointerEvent) => {
       const timeline = timelineRef.current;
       if (!timeline) {
         return;
       }
-
       const rect = timeline.getBoundingClientRect();
       const secondsPerPixel = duration / rect.width;
       const deltaSeconds = (event.clientX - dragState.pointerStartX) * secondsPerPixel;
       const noteLength = dragState.noteEnd - dragState.noteStart;
-      const nextStart = Math.max(0, Math.min(dragState.noteStart + deltaSeconds, duration - noteLength));
+      const nextStart = Math.max(
+        0,
+        Math.min(dragState.noteStart + deltaSeconds, duration - noteLength),
+      );
       const nextEnd = nextStart + noteLength;
-
       updateNoteById(dragState.noteId, (note) => ({
         ...note,
         start: Number(nextStart.toFixed(3)),
         end: Number(nextEnd.toFixed(3)),
       }));
     };
-
-    const handlePointerUp = () => {
-      setDragState(null);
-    };
-
+    const handlePointerUp = () => setDragState(null);
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", handlePointerUp);
-
     return () => {
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
@@ -237,7 +374,29 @@ export default function HomePage() {
       }}
     >
       <h1>电吉他转谱 PoC</h1>
-      <p>当前页面展示的是基于真实 pipeline 输出的分析结果，已经接入测试视频生成的最新分析 JSON。</p>
+      <div style={{ marginBottom: 12 }}>
+        <Link
+          href="/score"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "10px 14px",
+            borderRadius: 999,
+            background: "rgba(2, 132, 199, 0.10)",
+            border: "1px solid rgba(2, 132, 199, 0.24)",
+            color: "#0369a1",
+            textDecoration: "none",
+            fontWeight: 600,
+          }}
+        >
+          打开五线谱预览
+        </Link>
+      </div>
+      <p>
+        当前页面展示的是基于真实 pipeline 输出的分析结果，已经接入测试视频生成的最新分析
+        JSON，可以播放、循环、局部调整，并导出为 MIDI 或 MusicXML。
+      </p>
 
       <section
         style={{
@@ -260,10 +419,10 @@ export default function HomePage() {
       </section>
 
       <section style={{ marginTop: 32 }}>
-        <h2>Pipeline 概览</h2>
+        <h2>导出与音频控制</h2>
         <p>
-          当前这份初稿来自分离后的 <code>other.wav</code>，这是我们在 4-stem Demucs 分离后默认优先
-          使用的电吉他候选轨道。
+          当前这份初稿来自分离后的 <code>other.wav</code>，这是我们在 4-stem Demucs
+          分离后默认优先使用的电吉他候选轨道。
         </p>
 
         <div
@@ -275,13 +434,37 @@ export default function HomePage() {
             marginTop: 16,
           }}
         >
-          <button type="button" onClick={() => void togglePlayback()} style={primaryButtonStyle(isPlaying)}>
+          <button
+            type="button"
+            onClick={() => void togglePlayback()}
+            style={primaryButtonStyle(isPlaying)}
+          >
             {isPlaying ? "暂停音频" : "播放音频"}
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleExport("midi")}
+            style={secondaryButtonStyle(exportingFormat !== null)}
+            disabled={exportingFormat !== null}
+          >
+            {exportingFormat === "midi" ? "正在导出 MIDI..." : "导出 MIDI"}
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleExport("musicxml")}
+            style={secondaryButtonStyle(exportingFormat !== null)}
+            disabled={exportingFormat !== null}
+          >
+            {exportingFormat === "musicxml" ? "正在导出 MusicXML..." : "导出 MusicXML"}
           </button>
           <span style={{ color: "#475569", fontSize: 14 }}>
             当前播放位置：{currentTime.toFixed(2)}s / {duration.toFixed(2)}s
           </span>
         </div>
+
+        {exportMessage ? (
+          <StatusMessage message={exportMessage} error={exportMessage.includes("失败")} />
+        ) : null}
 
         <div
           style={{
@@ -292,19 +475,23 @@ export default function HomePage() {
             marginTop: 12,
           }}
         >
-          <button type="button" onClick={() => setLoopEnabled((value) => !value)} style={secondaryButtonStyle}>
+          <button
+            type="button"
+            onClick={() => setLoopEnabled((value) => !value)}
+            style={secondaryButtonStyle(false)}
+          >
             {loopEnabled ? "关闭循环" : "开启循环"}
           </button>
-          <button type="button" onClick={setLoopAroundSelectedNote} style={secondaryButtonStyle}>
+          <button type="button" onClick={setLoopAroundSelectedNote} style={secondaryButtonStyle(false)}>
             以当前音符设循环
           </button>
-          <button type="button" onClick={setLoopToCurrentMeasure} style={secondaryButtonStyle}>
+          <button type="button" onClick={setLoopToCurrentMeasure} style={secondaryButtonStyle(false)}>
             以当前小节设循环
           </button>
           <button
             type="button"
             onClick={() => clampLoop(Math.max(currentTime - 1, 0), Math.min(currentTime + 1.5, duration))}
-            style={secondaryButtonStyle}
+            style={secondaryButtonStyle(false)}
           >
             以当前播放点设循环
           </button>
@@ -318,7 +505,11 @@ export default function HomePage() {
             marginTop: 14,
           }}
         >
-          <FieldEditor label="循环开始" value={String(loopStart)} onChange={(value) => clampLoop(Number(value || 0), loopEnd)} />
+          <FieldEditor
+            label="循环开始"
+            value={String(loopStart)}
+            onChange={(value) => clampLoop(Number(value || 0), loopEnd)}
+          />
           <FieldEditor
             label="循环结束"
             value={String(loopEnd)}
@@ -333,19 +524,55 @@ export default function HomePage() {
 
         <audio ref={audioRef} preload="metadata" src="/api/audio" />
 
-        {audioError ? (
-          <p
-            style={{
-              marginTop: 12,
-              color: "#b91c1c",
-              background: "rgba(254, 226, 226, 0.9)",
-              border: "1px solid rgba(248, 113, 113, 0.4)",
-              borderRadius: 10,
-              padding: "10px 12px",
-            }}
+        {audioError ? <StatusMessage message={audioError} error /> : null}
+      </section>
+
+      <section style={{ marginTop: 32 }}>
+        <h2>工程保存与恢复</h2>
+        <p>
+          这一步先支持浏览器本地保存和工程文件导入导出，避免你们调整过的节奏与循环设置只停留在当前页面会话里。
+        </p>
+
+        <div
+          style={{
+            display: "flex",
+            gap: 10,
+            flexWrap: "wrap",
+            alignItems: "center",
+            marginTop: 16,
+          }}
+        >
+          <button type="button" onClick={saveProjectToBrowser} style={secondaryButtonStyle(false)}>
+            保存到浏览器
+          </button>
+          <button
+            type="button"
+            onClick={restoreProjectFromBrowser}
+            style={secondaryButtonStyle(false)}
           >
-            {audioError}
-          </p>
+            从浏览器恢复
+          </button>
+          <button type="button" onClick={downloadProjectFile} style={secondaryButtonStyle(false)}>
+            导出工程文件
+          </button>
+          <button
+            type="button"
+            onClick={() => importInputRef.current?.click()}
+            style={secondaryButtonStyle(false)}
+          >
+            导入工程文件
+          </button>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept="application/json,.json"
+            onChange={(event) => void handleImportProject(event)}
+            hidden
+          />
+        </div>
+
+        {projectMessage ? (
+          <StatusMessage message={projectMessage} error={projectMessage.includes("失败")} />
         ) : null}
       </section>
 
@@ -365,7 +592,9 @@ export default function HomePage() {
 
       <section style={{ marginTop: 32 }}>
         <h2>节奏时间轴</h2>
-        <p>这个视图会把小节、拍点和检测到的音符事件放到同一条时间轴上，帮助我们更快判断节奏是否对齐。</p>
+        <p>
+          这个视图会把小节、拍点和检测到的音符事件放到同一条时间轴上，帮助我们更快判断节奏是否对齐。
+        </p>
         <p style={{ color: "#475569", marginTop: 0 }}>
           点击音符可以跳转播放位置，也可以左右拖动音符块调整它的时间位置。播放时，当前命中的音符会自动高亮。
         </p>
@@ -416,7 +645,6 @@ export default function HomePage() {
 
           {currentAnalysis.measures.map((measure) => {
             const left = `${(measure.start / duration) * 100}%`;
-
             return (
               <div
                 key={`measure-${measure.index}`}
@@ -438,7 +666,6 @@ export default function HomePage() {
           {currentAnalysis.beats.map((beat, index) => {
             const left = `${(beat / duration) * 100}%`;
             const isMeasureStart = index % currentAnalysis.timeSignature.numerator === 0;
-
             return (
               <div
                 key={`beat-line-${index}`}
@@ -459,7 +686,6 @@ export default function HomePage() {
 
           {currentAnalysis.measures.map((measure) => {
             const left = `${(measure.start / duration) * 100}%`;
-
             return (
               <div
                 key={`measure-label-${measure.index}`}
@@ -474,7 +700,7 @@ export default function HomePage() {
                   zIndex: 3,
                 }}
               >
-                第{measure.index + 1}小节
+                第 {measure.index + 1} 小节
               </div>
             );
           })}
@@ -549,14 +775,18 @@ export default function HomePage() {
           <LegendSwatch color="#94a3b8" label="拍点线" />
           <LegendSwatch color="hsla(205, 85%, 52%, 0.75)" label="检测到的音符事件" />
           <LegendSwatch color="#e11d48" label="当前播放位置" />
-          <LegendSwatch color="linear-gradient(90deg, #f97316 0%, #fb7185 100%)" label="当前播放命中的音符" />
+          <LegendSwatch
+            color="linear-gradient(90deg, #f97316 0%, #fb7185 100%)"
+            label="当前播放命中的音符"
+          />
           <LegendSwatch color="rgba(34, 197, 94, 0.55)" label="循环区间" />
         </div>
+      </section>
 
-        {selectedNote ? (
+      {selectedNote ? (
+        <section style={{ marginTop: 32 }}>
           <div
             style={{
-              marginTop: 16,
               padding: 16,
               borderRadius: 14,
               background: "rgba(255, 255, 255, 0.78)",
@@ -570,7 +800,9 @@ export default function HomePage() {
                 当前播放位置正在经过音符 {activePlaybackNote.id}。
               </p>
             ) : (
-              <p style={{ marginTop: 0, color: "#475569" }}>当前播放位置位于两个检测音符之间。</p>
+              <p style={{ marginTop: 0, color: "#475569" }}>
+                当前播放位置位于两个检测音符之间。
+              </p>
             )}
 
             <div
@@ -591,7 +823,7 @@ export default function HomePage() {
             <div style={{ marginTop: 20 }}>
               <h4 style={{ marginBottom: 10 }}>本地编辑</h4>
               <p style={{ color: "#475569", marginTop: 0 }}>
-                这里的修改会立即反映到时间轴和表格。现在已经支持拖动时间轴中的音符块整体移动位置。
+                这里的修改会立即反映到时间轴和表格。当前已经支持拖动时间轴中的音符块整体移动位置。
               </p>
               <div
                 style={{
@@ -622,14 +854,14 @@ export default function HomePage() {
                 />
               </div>
               <div style={{ marginTop: 14 }}>
-                <button type="button" onClick={resetNotes} style={secondaryButtonStyle}>
+                <button type="button" onClick={resetNotes} style={secondaryButtonStyle(false)}>
                   恢复原始分析结果
                 </button>
               </div>
             </div>
           </div>
-        ) : null}
-      </section>
+        </section>
+      ) : null}
 
       <section style={{ marginTop: 32 }}>
         <h2>音符预览</h2>
@@ -660,7 +892,7 @@ export default function HomePage() {
                   <td style={{ padding: "8px 10px" }}>{note.end.toFixed(3)}</td>
                   <td style={{ padding: "8px 10px" }}>{note.midiPitch}</td>
                   <td style={{ padding: "8px 10px" }}>{note.durationBeats}</td>
-                  <td style={{ padding: "8px 10px" }}>{note.measureIndex}</td>
+                  <td style={{ padding: "8px 10px" }}>{note.measureIndex + 1}</td>
                   <td style={{ padding: "8px 10px" }}>{note.beatOffset}</td>
                 </tr>
               ))}
@@ -671,16 +903,14 @@ export default function HomePage() {
 
       <section style={{ marginTop: 32 }}>
         <h2>下一步 UI 方向</h2>
-        <p>下一步最有价值的升级，是继续支持在时间轴上直接调整音符长度和循环区间拖拽，让修谱体验更接近真实工具。</p>
+        <p>
+          现在已经有了播放、循环、导出和工程保存闭环。下一步最有价值的升级，是继续支持在时间轴上直接调整音符长度，或加入多
+          stem 切换对比。
+        </p>
       </section>
     </main>
   );
 }
-
-type MetricCardProps = {
-  label: string;
-  value: string;
-};
 
 function MetricCard({ label, value }: MetricCardProps) {
   return (
@@ -698,11 +928,6 @@ function MetricCard({ label, value }: MetricCardProps) {
   );
 }
 
-type LegendSwatchProps = {
-  color: string;
-  label: string;
-};
-
 function LegendSwatch({ color, label }: LegendSwatchProps) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -719,12 +944,6 @@ function LegendSwatch({ color, label }: LegendSwatchProps) {
     </div>
   );
 }
-
-type FieldEditorProps = {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-};
 
 function FieldEditor({ label, value, onChange }: FieldEditorProps) {
   return (
@@ -746,6 +965,25 @@ function FieldEditor({ label, value, onChange }: FieldEditorProps) {
   );
 }
 
+function StatusMessage({ message, error = false }: StatusMessageProps) {
+  return (
+    <p
+      style={{
+        marginTop: 12,
+        color: error ? "#b91c1c" : "#166534",
+        background: error ? "rgba(254, 226, 226, 0.9)" : "rgba(220, 252, 231, 0.85)",
+        border: error
+          ? "1px solid rgba(248, 113, 113, 0.4)"
+          : "1px solid rgba(74, 222, 128, 0.35)",
+        borderRadius: 10,
+        padding: "10px 12px",
+      }}
+    >
+      {message}
+    </p>
+  );
+}
+
 function primaryButtonStyle(isPlaying: boolean) {
   return {
     border: 0,
@@ -760,16 +998,19 @@ function primaryButtonStyle(isPlaying: boolean) {
   } as const;
 }
 
-const secondaryButtonStyle = {
-  border: "1px solid #cbd5e1",
-  borderRadius: 999,
-  background: "#fff",
-  color: "#0f172a",
-  padding: "10px 14px",
-  fontSize: 13,
-  fontWeight: 600,
-  cursor: "pointer",
-} as const;
+function secondaryButtonStyle(disabled: boolean) {
+  return {
+    border: "1px solid #cbd5e1",
+    borderRadius: 999,
+    background: "#fff",
+    color: disabled ? "#94a3b8" : "#0f172a",
+    padding: "10px 14px",
+    fontSize: 13,
+    fontWeight: 600,
+    cursor: disabled ? "not-allowed" : "pointer",
+    opacity: disabled ? 0.72 : 1,
+  } as const;
+}
 
 const beatBadgeStyle = {
   padding: "6px 10px",

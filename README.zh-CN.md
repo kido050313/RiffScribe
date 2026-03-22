@@ -2,115 +2,112 @@
 
 [English](./README.md) | [中文](./README.zh-CN.md)
 
-这是一个以“节奏优先”为核心的电吉他转谱原型项目。
+这是一个面向电吉他练习场景的转谱原型项目，目标是把一段本地视频或混合音频，尽快变成一份可继续修正的节奏与音符初稿，帮助用户减少手工扒谱时间。
 
-## 这是什么项目
+## 这个项目在做什么
 
-这个项目的目标，是帮助吉他手把一段较短的演奏视频或音频，更快地变成一份可继续修改的转谱初稿，而不是完全靠手动扒谱。
+当前主流程是：
 
-当前主流程：
 1. 输入本地视频或混合音频
 2. 提取音频
-3. 做 4-stem 分离
-4. 优先使用 `other.wav` 作为电吉他候选 stem
+3. 用 Demucs 做 4-stem 分离
+4. 默认优先选择 `other.wav` 作为电吉他候选轨道
 5. 分析 BPM、拍点、小节和音符事件
-6. 在网页时间轴中查看和修正结果
+6. 在前端时间轴里播放、查看、循环、微调
+7. 导出为 `MIDI` 或 `MusicXML`
 
-## 当前做到什么程度
+## 当前已经完成的能力
 
-已经可用的能力：
-- 本地视频提音为 wav
+- 本地视频提音为 `wav`
 - 基于 Demucs 的 4-stem 分离
-- 输出 BPM、拍点、小节、音符事件 JSON
-- 前端页面支持：
-  - 播放分离后的音频
-  - 查看拍点、小节和音符时间轴
-  - 高亮当前播放命中的音符
-  - 设置循环区间反复播放
+- 生成分析结果 JSON
+- 导出 `MIDI`
+- 导出 `MusicXML`
+- 前端工作台支持：
+  - 播放分离后的候选音频
+  - 查看小节、拍点、音符时间轴
+  - 播放时高亮当前命中的音符
+  - 设置循环区间
   - 本地修改音符字段
   - 在时间轴上左右拖动音符块
-
-目前还属于原型阶段的部分：
-- 音高和节奏识别精度还比较粗
-- 还没有正式导出乐谱
-- 还没有持久化保存
-- 还没有完整的专业编辑能力
+  - 保存到浏览器
+  - 导入/导出工程文件
 
 ## 目录说明
 
-- `analyzer/`：Python 分析脚本，负责提音、分离、分析
+- `analyzer/`：Python 分析脚本，负责提音、分离、分析、导出
 - `web/`：Next.js 前端原型
-- `samples/`：样本使用说明
+- `samples/`：样本说明
 - `samples/raw/`：原始视频或混合音频输入
-- `output/`：提取音频、分离结果、分析 JSON
-- `docs/`：规划文档和阶段说明
+- `output/`：提取音频、分离结果、分析 JSON、导出文件
+- `docs/`：阶段性方案和记录
 
 ## 快速开始
 
 ### 1. 创建 Python 环境
 
-创建项目虚拟环境：
-
 ```powershell
 python -m venv .venv
 ```
-
-安装 Python 依赖：
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r analyzer/requirements.txt
 ```
 
-### 2. 运行分析流水线
+### 2. 跑完整分析流水线
 
-先把本地素材放进 `samples/raw/`，例如 `samples/raw/test1.mp4`。
-
-运行：
+先把素材放进 `samples/raw/`，例如 `samples/raw/test1.mp4`。
 
 ```powershell
 .\.venv\Scripts\python.exe analyzer/pipeline.py --input samples/raw/test1.mp4 --fallback-to-extracted
 ```
 
-这一步会生成：
-- `output/extracted/` 中的提取音频
-- `output/separated/` 中的分离 stem
-- `output/analysis/` 中的分析 JSON
+执行后会产出：
 
-### 3. 启动前端页面
+- `output/extracted/`：提取出的音频
+- `output/separated/`：Demucs 分离结果
+- `output/analysis/`：分析 JSON
 
-进入前端目录：
+### 3. 导出 MIDI 和 MusicXML
+
+```powershell
+.\.venv\Scripts\python.exe analyzer/export.py --input output/analysis/test1.analysis.json
+```
+
+执行后会产出：
+
+- `output/exports/test1.mid`
+- `output/exports/test1.musicxml`
+
+### 4. 启动前端
 
 ```powershell
 cd web
-```
-
-安装前端依赖：
-
-```powershell
 pnpm install
-```
-
-启动开发服务器：
-
-```powershell
 pnpm dev
 ```
 
-然后打开终端中显示的本地地址。
+需要检查类型时运行：
 
-## 已验证示例
+```powershell
+pnpm typecheck
+```
 
-仓库当前已经用下面这组数据验证通过：
+## 当前推荐用法
+
+这个项目现在最适合用来做：
+
+- 短句节奏检查
+- solo 练习辅助
+- 生成一份可继续修的初稿
+
+它还不是完整的专业打谱软件，但已经能作为“减少手工扒谱时间”的原型工具使用。
+
+## 已验证样例
+
 - 输入：`samples/raw/test1.mp4`
 - 提取音频：`output/extracted/test1.wav`
-- 优先使用的 stem：`output/separated/htdemucs/test1/other.wav`
+- 候选 stem：`output/separated/htdemucs/test1/other.wav`
 - 分析结果：`output/analysis/test1.analysis.json`
-
-## 现阶段建议怎么用
-
-这个项目现在最适合拿来做：
-- 节奏检查
-- 短句初稿生成
-- solo 练习辅助
-
-它还不是一个最终版打谱软件，但已经可以作为“减少手动扒谱时间”的原型工具来使用。
+- MIDI：`output/exports/test1.mid`
+- MusicXML：`output/exports/test1.musicxml`

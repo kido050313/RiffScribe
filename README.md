@@ -22,6 +22,8 @@ What already works:
 - local video to wav extraction
 - Demucs-based 4-stem separation
 - rhythm and note-event analysis to JSON
+- export to MIDI
+- export to MusicXML
 - a web page that can:
   - play the separated audio
   - show beats, measures, and note events
@@ -76,6 +78,18 @@ This produces:
 - separated stems in `output/separated/`
 - analysis JSON in `output/analysis/`
 
+### 2.5 Export MIDI and MusicXML
+
+Run:
+
+```powershell
+.\.venv\Scripts\python.exe analyzer/export.py --input output/analysis/test1.analysis.json
+```
+
+This produces:
+- `output/exports/test1.mid`
+- `output/exports/test1.musicxml`
+
 ### 3. Run the web UI
 
 Go to the frontend directory:
@@ -105,6 +119,8 @@ The repository has already been tested with:
 - extracted audio: `output/extracted/test1.wav`
 - preferred stem: `output/separated/htdemucs/test1/other.wav`
 - analysis result: `output/analysis/test1.analysis.json`
+- MIDI export: `output/exports/test1.mid`
+- MusicXML export: `output/exports/test1.musicxml`
 
 ## Recommended usage right now
 

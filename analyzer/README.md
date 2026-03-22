@@ -17,6 +17,7 @@ This folder contains the Python-side audio pipeline.
 - `separate.py`: run Demucs through the Python API and save stems with `soundfile`
 - `main.py`: analyze an audio file into JSON note events
 - `pipeline.py`: run extraction, separation, and analysis in one command
+- `export.py`: export analysis JSON to MIDI and MusicXML
 
 ## Recommended workflow
 
@@ -33,6 +34,12 @@ Run the full pipeline:
 .\.venv\Scripts\python.exe analyzer/pipeline.py --input samples/raw/test1.mp4 --fallback-to-extracted
 ```
 
+Export MIDI and MusicXML:
+
+```powershell
+.\.venv\Scripts\python.exe analyzer/export.py --input output/analysis/test1.analysis.json
+```
+
 ## Important project choices
 
 - default separation is full 4-stem, not `--two-stems vocals`
@@ -45,6 +52,7 @@ After running the pipeline you should see:
 - extracted wav in `output/extracted/`
 - stems in `output/separated/`
 - analysis JSON in `output/analysis/`
+- exported MIDI and MusicXML in `output/exports/`
 
 ## Verified example
 
@@ -52,3 +60,5 @@ After running the pipeline you should see:
 - extracted audio: `output/extracted/test1.wav`
 - preferred stem: `output/separated/htdemucs/test1/other.wav`
 - analysis output: `output/analysis/test1.analysis.json`
+- MIDI export: `output/exports/test1.mid`
+- MusicXML export: `output/exports/test1.musicxml`
