@@ -10,8 +10,9 @@
 3. 通过 Demucs 做 4-stem 分离
 4. 默认优先选择 `other.wav` 作为电吉他候选轨道
 5. 分析 BPM、拍点、小节和音符事件
-6. 在网页工作台中播放、查看、循环和导出
-7. 导出 `MIDI` 和 `MusicXML`
+6. 自动生成最小评测报告
+7. 在网页工作台中播放、查看、循环和导出
+8. 导出 `MIDI` 和 `MusicXML`
 
 ## 当前阶段
 
@@ -21,14 +22,14 @@
 - 视频提音
 - 4-stem 分离
 - 分析 JSON 生成
+- 开发包 A：统一数据模型基础落地
+- 开发包 B：最小评测实现
 - `MIDI` 导出
 - `MusicXML` 导出
 - 网页时间轴工作台
 - 网页五线谱预览入口
-- 开发包 A：统一数据模型基础落地
 
 正在推进：
-- 自动评测
 - 版本管理
 - 自动调参与多轮迭代
 
@@ -58,13 +59,28 @@
 - `web/types/domain.ts`
 - `web/types/analysis.ts`
 
+## 最小评测报告
+
+当前已新增最小评测能力，用于给自动闭环提供第一版结构化判断。
+
+当前报告包含：
+- `overall`
+- `metrics.rhythm`
+- `metrics.pitch`
+- `diagnosis.primaryIssues`
+- `adjustments.recommendedActions`
+
+相关代码：
+- `analyzer/evaluate.py`
+- `output/tasks/<taskId>/versions/<versionId>/evaluation-report.json`
+
 ## 目录说明
 
-- `analyzer/`：Python 分析脚本，负责提音、分离、分析、导出
+- `analyzer/`：Python 分析脚本，负责提音、分离、分析、评测、导出
 - `web/`：Next.js 前端原型
 - `samples/`：样本说明
 - `samples/raw/`：原始视频或混合音频输入
-- `output/`：提取音频、分离结果、分析 JSON、导出文件
+- `output/`：提取音频、分离结果、分析 JSON、评测报告、导出文件
 - `docs/`：产品、方法论和开发拆解文档
 
 ## 快速开始
@@ -92,7 +108,16 @@ python -m venv .venv
 - `output/separated/`：Demucs 分离结果
 - `output/analysis/`：分析 JSON
 
-### 3. 导出 MIDI 和 MusicXML
+### 3. 生成评测报告
+
+```powershell
+.\.venv\Scripts\python.exe analyzer/evaluate.py --input output/analysis/test1.analysis.json
+```
+
+执行后会产出：
+- `output/tasks/task_other/versions/ver_001/evaluation-report.json`
+
+### 4. 导出 MIDI 和 MusicXML
 
 ```powershell
 .\.venv\Scripts\python.exe analyzer/export.py --input output/analysis/test1.analysis.json
@@ -102,7 +127,7 @@ python -m venv .venv
 - `output/exports/test1.mid`
 - `output/exports/test1.musicxml`
 
-### 4. 启动前端
+### 5. 启动前端
 
 ```powershell
 cd web
@@ -123,6 +148,7 @@ pnpm typecheck
 - Solo 练习辅助
 - 生成一份可继续编辑的初稿
 - 比较不同 stem 对分析的影响
+- 为后续自动调参与迭代引擎提供结构化评测输入
 
 它还不是最终版自动出谱产品，但已经是一个可继续扩展的研发底座。
 
@@ -132,5 +158,6 @@ pnpm typecheck
 - 提取音频：`output/extracted/test1.wav`
 - 候选 stem：`output/separated/htdemucs/test1/other.wav`
 - 分析结果：`output/analysis/test1.analysis.json`
+- 评测报告：`output/tasks/task_other/versions/ver_001/evaluation-report.json`
 - MIDI：`output/exports/test1.mid`
 - MusicXML：`output/exports/test1.musicxml`

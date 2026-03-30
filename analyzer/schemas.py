@@ -106,3 +106,32 @@ class NotationCandidate:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+@dataclass(slots=True)
+class EvaluationOverall:
+    score: float
+    confidence: float | None = None
+    rankHint: str | None = None
+    summary: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(slots=True)
+class EvaluationReport:
+    reportId: str
+    taskId: str
+    versionId: str
+    notationId: str
+    overall: EvaluationOverall
+    metrics: dict[str, Any] = field(default_factory=dict)
+    diagnosis: dict[str, Any] = field(default_factory=dict)
+    adjustments: dict[str, Any] = field(default_factory=dict)
+    comparison: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        payload = asdict(self)
+        payload["overall"] = self.overall.to_dict()
+        return payload

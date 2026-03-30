@@ -95,18 +95,62 @@ export type NotationCandidate = {
 
 export type EvaluationReport = {
   reportId: EntityId;
+  schemaVersion: string;
   taskId: EntityId;
   versionId: EntityId;
   notationId: EntityId;
+  analysisPath: string;
+  input: {
+    assetPath?: string;
+    assetType?: string;
+    durationSec?: number;
+    selectedStem?: string;
+    sourceName?: string;
+  };
+  candidate: {
+    candidateId: EntityId;
+    analysisPath: string;
+    noteCount: number;
+    measureCount: number;
+    beatCount: number;
+    tempo?: number;
+    timeSignature: string;
+  };
   overall: {
     score: number;
     confidence?: number;
     rankHint?: string;
     summary?: string;
   };
-  metrics: Record<string, unknown>;
-  diagnosis: Record<string, unknown>;
-  adjustments?: Record<string, unknown>;
+  metrics: {
+    rhythm: {
+      score: number;
+      beatAlignment: number;
+      measureBoundaryScore: number;
+      negativeBeatOffsetRatio: number;
+      fragmentationRatio: number;
+      onsetDeviationMean: number;
+      onsetDeviationMedian: number;
+    };
+    pitch: {
+      score: number;
+      validPitchRatio: number;
+      outlierRatio: number;
+      excessiveLeapRatio: number;
+      contourStability: number;
+    };
+  };
+  diagnosis: {
+    primaryIssues: string[];
+    secondaryIssues: string[];
+    riskLevel: string;
+  };
+  adjustments?: {
+    recommendedActions: string[];
+    priority?: string;
+    nextStrategy?: string;
+    parameterHints?: Record<string, unknown>;
+  };
   comparison?: Record<string, unknown>;
 };
 
