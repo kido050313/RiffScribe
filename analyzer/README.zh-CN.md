@@ -1,4 +1,4 @@
-# Analyzer
+﻿# Analyzer
 
 [English](./README.md) | [中文](./README.zh-CN.md)
 
@@ -6,18 +6,43 @@
 
 ## 主要职责
 
-- 从本地视频或混合音频中提取 wav
+- 从本地视频或混合音频中提取 `wav`
 - 运行 Demucs 分离
 - 把音频分析成 BPM、拍点、小节和音符事件
 - 将标准化 JSON 写入 `output/analysis/`
+- 导出 `MIDI` 和 `MusicXML`
 
-## 主要脚本
+## 当前脚本
 
-- `extract.py`：把本地媒体转换为可分析的 wav
+- `extract.py`：把本地媒体转换为可分析的 `wav`
 - `separate.py`：通过 Demucs Python API 做分离，并用 `soundfile` 保存 stem
-- `main.py`：把单个音频文件分析成 JSON 音符事件
+- `main.py`：把单个音频文件分析成统一结构 JSON
 - `pipeline.py`：一条命令串起提音、分离和分析
-- `export.py`：把分析 JSON 导出成 MIDI 和 MusicXML
+- `export.py`：把分析 JSON 导出成 `MIDI` 和 `MusicXML`
+- `schemas.py`：统一数据模型的数据类定义
+
+## 当前输出结构
+
+`main.py` 现在输出的是统一数据模型，并保留旧字段兼容现有前端和导出流程。
+
+新增结构：
+- `schemaVersion`
+- `taskId`
+- `versionId`
+- `inputAsset`
+- `stemCandidate`
+- `timingGrid`
+- `detailedNotes`
+- `notationCandidate`
+
+兼容字段：
+- `sourceName`
+- `durationSec`
+- `bpm`
+- `timeSignature`
+- `beats`
+- `measures`
+- `notes`
 
 ## 推荐使用方式
 
@@ -34,6 +59,12 @@ python -m venv .venv
 .\.venv\Scripts\python.exe analyzer/pipeline.py --input samples/raw/test1.mp4 --fallback-to-extracted
 ```
 
+单独运行分析：
+
+```powershell
+.\.venv\Scripts\python.exe analyzer/main.py --input output/separated/htdemucs/test1/other.wav --output output/analysis/test1.analysis.json
+```
+
 导出 MIDI 和 MusicXML：
 
 ```powershell
@@ -42,9 +73,10 @@ python -m venv .venv
 
 ## 当前的重要约定
 
-- 默认采用完整 4-stem 分离，不再优先使用 `--two-stems vocals`
+- 默认采用完整 4-stem 分离，不优先使用 `--two-stems vocals`
 - `other.wav` 被视为第一优先级的电吉他候选 stem
 - 如果分离效果不可用，pipeline 可以回退到提取出的混合音频继续分析
+- 当前分析器已经接入统一数据模型，但节奏和音高质量仍然属于 PoC 阶段
 
 ## 正常输出结果
 

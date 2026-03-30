@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import argparse
 import json
@@ -14,8 +14,15 @@ except ImportError as exc:  # pragma: no cover - runtime dependency guard
         "Missing dependency: librosa. Install analyzer/requirements.txt before running the analyzer."
     ) from exc
 
+from schemas import DetailedNote, InputAsset, Measure, NotationCandidate, StemCandidate, TimingGrid
 
+
+SCHEMA_VERSION = "analysis.v2"
 DEFAULT_TIME_SIGNATURE = {"numerator": 4, "denominator": 4}
+DEFAULT_TIME_SIGNATURE_LABEL = "4/4"
+DEFAULT_GROOVE_LABEL = "straight"
+DEFAULT_TASK_PREFIX = "task"
+DEFAULT_VERSION_PREFIX = "ver"
 A4_MIDI = 69
 A4_HZ = 440.0
 
@@ -53,11 +60,11 @@ def estimate_pitch_for_segment(
     return hz_to_midi(pitch_hz)
 
 
-def build_measures(beats: list[float], beat_duration: float, beats_per_measure: int) -> list[dict[str, Any]]:
+def build_measures(beats: list[float], beat_duration: float, beats_per_measure: int) -> list[Measure]:
     if not beats:
         return []
 
-    measures: list[dict[str, Any]] = []
+    measures: list[Measure] = []
     for index in range(0, len(beats), beats_per_measure):
         start = beats[index]
         if index + beats_per_measure < len(beats):
@@ -65,19 +72,19 @@ def build_measures(beats: list[float], beat_duration: float, beats_per_measure: 
         else:
             end = start + beat_duration * beats_per_measure
         measures.append(
-            {
-                "index": len(measures),
-                "start": round(float(start), 4),
-                "end": round(float(end), 4),
-            }
+            Measure(
+                index=len(measures),
+                start=round(float(start), 4),
+                end=round(float(end), 4),
+            )
         )
     return measures
 
 
-def find_measure_index(start_time: float, measures: list[dict[str, Any]]) -> int:
+def find_measure_index(start_time: float, measures: list[Measure]) -> int:
     for measure in measures:
-        if measure["start"] <= start_time < measure["end"]:
-            return int(measure["index"])
+        if measure.start <= start_time < measure.end:
+            return int(measure.index)
     return max(len(measures) - 1, 0)
 
 
@@ -87,9 +94,11 @@ def build_notes(
     onsets: np.ndarray,
     duration_sec: float,
     beat_duration: float,
-    measures: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    notes: list[dict[str, Any]] = []
+    measures: list[Measure],
+    task_id: str,
+    version_id: str,
+) -> list[DetailedNote]:
+    notes: list[DetailedNote] = []
     if onsets.size == 0:
         return notes
 
@@ -103,38 +112,71 @@ def build_notes(
         midi_pitch = estimate_pitch_for_segment(signal, sample_rate, start_sample, end_sample)
 
         measure_index = find_measure_index(float(start_time), measures)
-        measure_start = measures[measure_index]["start"] if measures else 0.0
+        measure_start = measures[measure_index].start if measures else 0.0
         beat_offset = (float(start_time) - float(measure_start)) / beat_duration if beat_duration > 0 else 0.0
         duration_beats = raw_duration / beat_duration if beat_duration > 0 else 0.0
 
         notes.append(
-            {
-                "id": f"n{index + 1}",
-                "start": round(float(start_time), 4),
-                "end": round(float(next_time), 4),
-                "midiPitch": midi_pitch,
-                "durationBeats": round(float(duration_beats), 4),
-                "measureIndex": measure_index,
-                "beatOffset": round(float(beat_offset), 4),
-            }
+            DetailedNote(
+                noteId=f"note_{index + 1:03d}",
+                taskId=task_id,
+                versionId=version_id,
+                start=round(float(start_time), 4),
+                end=round(float(next_time), 4),
+                midiPitch=midi_pitch,
+                measureIndex=measure_index,
+                beatOffset=round(float(beat_offset), 4),
+                durationBeats=round(float(duration_beats), 4),
+                noteClass="backbone",
+                confidence=0.5,
+            )
         )
     return notes
 
 
-def analyze_audio(audio_path: Path) -> dict[str, Any]:
+def infer_asset_type(audio_path: Path) -> str:
+    video_suffixes = {".mp4", ".mov", ".mkv", ".avi", ".webm"}
+    return "video" if audio_path.suffix.lower() in video_suffixes else "audio"
+
+
+def derive_task_id(audio_path: Path) -> str:
+    return f"{DEFAULT_TASK_PREFIX}_{audio_path.stem}"
+
+
+def derive_version_id() -> str:
+    return f"{DEFAULT_VERSION_PREFIX}_001"
+
+
+def derive_stem_type(audio_path: Path) -> str:
+    stem_name = audio_path.stem.lower()
+    if stem_name in {"other", "vocals", "bass", "drums", "extracted"}:
+        return stem_name
+    if stem_name == "no_vocals":
+        return "other"
+    return "extracted"
+
+
+def build_analysis_result(audio_path: Path) -> dict[str, Any]:
+    task_id = derive_task_id(audio_path)
+    version_id = derive_version_id()
+    asset_id = f"asset_{audio_path.stem}"
+    stem_id = f"stem_{audio_path.stem}"
+    timing_grid_id = f"grid_{audio_path.stem}"
+    notation_id = f"notation_{audio_path.stem}"
+
     signal, sample_rate = librosa.load(audio_path, sr=None, mono=True)
     duration_sec = float(librosa.get_duration(y=signal, sr=sample_rate))
 
     tempo, beat_frames = librosa.beat.beat_track(y=signal, sr=sample_rate, units="frames")
     bpm = float(tempo.item() if hasattr(tempo, "item") else tempo)
-    beat_times = librosa.frames_to_time(beat_frames, sr=sample_rate)
+    beat_times = [round(float(beat), 4) for beat in librosa.frames_to_time(beat_frames, sr=sample_rate)]
 
     onset_frames = librosa.onset.onset_detect(y=signal, sr=sample_rate, units="frames")
 
     beats_per_measure = DEFAULT_TIME_SIGNATURE["numerator"]
     beat_duration = 60.0 / bpm if bpm > 0 else 0.5
     measures = build_measures(
-        beats=[float(beat) for beat in beat_times],
+        beats=beat_times,
         beat_duration=beat_duration,
         beats_per_measure=beats_per_measure,
     )
@@ -146,21 +188,81 @@ def analyze_audio(audio_path: Path) -> dict[str, Any]:
         duration_sec=duration_sec,
         beat_duration=beat_duration,
         measures=measures,
+        task_id=task_id,
+        version_id=version_id,
     )
 
+    input_asset = InputAsset(
+        assetId=asset_id,
+        taskId=task_id,
+        path=str(audio_path),
+        type=infer_asset_type(audio_path),
+        durationSec=round(duration_sec, 4),
+        sampleRate=sample_rate,
+        channels=1,
+        sourceLabel=audio_path.name,
+        metadata={"sourceName": audio_path.name},
+    )
+    stem_candidate = StemCandidate(
+        stemId=stem_id,
+        taskId=task_id,
+        versionId=version_id,
+        sourceAssetId=asset_id,
+        stemType=derive_stem_type(audio_path),
+        path=str(audio_path),
+        durationSec=round(duration_sec, 4),
+        qualityScore=1.0,
+        selectionReason="selected_for_analysis",
+    )
+    timing_grid = TimingGrid(
+        timingGridId=timing_grid_id,
+        taskId=task_id,
+        versionId=version_id,
+        sourceStemId=stem_id,
+        tempo=round(bpm, 2),
+        selectedTimeSignature=DEFAULT_TIME_SIGNATURE_LABEL,
+        timeSignatureCandidates=[DEFAULT_TIME_SIGNATURE_LABEL],
+        beats=beat_times,
+        downbeats=[measure.start for measure in measures],
+        measures=measures,
+        grooveLabel=DEFAULT_GROOVE_LABEL,
+        confidence=0.5,
+    )
+    notation_candidate = NotationCandidate(
+        notationId=notation_id,
+        taskId=task_id,
+        versionId=version_id,
+        timingGridId=timing_grid_id,
+        noteIds=[note.noteId for note in notes],
+        tabRepresentation={"tuning": [64, 59, 55, 50, 45, 40]},
+        staffRepresentation={"clef": "treble"},
+    )
+
+    legacy_measures = [measure.to_dict() for measure in measures]
+    legacy_notes = [note.to_dict() for note in notes]
+
     return {
+        "schemaVersion": SCHEMA_VERSION,
+        "taskId": task_id,
+        "versionId": version_id,
+        "inputAsset": input_asset.to_dict(),
+        "stemCandidate": stem_candidate.to_dict(),
+        "timingGrid": timing_grid.to_dict(),
+        "detailedNotes": legacy_notes,
+        "notationCandidate": notation_candidate.to_dict(),
+        # Compatibility fields used by the current web prototype and export pipeline.
         "sourceName": audio_path.name,
         "durationSec": round(duration_sec, 4),
         "bpm": round(bpm, 2),
         "timeSignature": DEFAULT_TIME_SIGNATURE,
-        "beats": [round(float(beat), 4) for beat in beat_times],
-        "measures": measures,
-        "notes": notes,
+        "beats": beat_times,
+        "measures": legacy_measures,
+        "notes": legacy_notes,
     }
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Analyze a guitar audio clip into a Day 2 JSON draft.")
+    parser = argparse.ArgumentParser(description="Analyze a guitar audio clip into a structured JSON draft.")
     parser.add_argument(
         "--input",
         type=Path,
@@ -187,7 +289,7 @@ def main() -> None:
     if not input_path.exists():
         raise SystemExit(f"Input audio not found: {input_path}")
 
-    result = analyze_audio(input_path)
+    result = build_analysis_result(input_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
 

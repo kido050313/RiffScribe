@@ -1,37 +1,62 @@
-# 电吉他转谱 PoC
+﻿# 电吉他自动转谱 PoC
 
 [English](./README.md) | [中文](./README.zh-CN.md)
 
-这是一个面向电吉他练习场景的转谱原型项目，目标是把一段本地视频或混合音频，尽快变成一份可继续修正的节奏与音符初稿，帮助用户减少手工扒谱时间。
+这是一个面向中文用户的电吉他自动转谱原型项目，目标是把一段本地视频或混合音频，尽快转换成一份可继续修正和导出的谱面草稿。
 
-## 这个项目在做什么
-
-当前主流程是：
-
+当前项目已经具备一条最小可跑通链路：
 1. 输入本地视频或混合音频
 2. 提取音频
-3. 用 Demucs 做 4-stem 分离
+3. 通过 Demucs 做 4-stem 分离
 4. 默认优先选择 `other.wav` 作为电吉他候选轨道
 5. 分析 BPM、拍点、小节和音符事件
-6. 在前端时间轴里播放、查看、循环、微调
-7. 导出为 `MIDI` 或 `MusicXML`
+6. 在网页工作台中播放、查看、循环和导出
+7. 导出 `MIDI` 和 `MusicXML`
 
-## 当前已经完成的能力
+## 当前阶段
 
-- 本地视频提音为 `wav`
-- 基于 Demucs 的 4-stem 分离
-- 生成分析结果 JSON
-- 导出 `MIDI`
-- 导出 `MusicXML`
-- 前端工作台支持：
-  - 播放分离后的候选音频
-  - 查看小节、拍点、音符时间轴
-  - 播放时高亮当前命中的音符
-  - 设置循环区间
-  - 本地修改音符字段
-  - 在时间轴上左右拖动音符块
-  - 保存到浏览器
-  - 导入/导出工程文件
+项目现在处于从 PoC 向“自动评测闭环”过渡的阶段。
+
+已完成：
+- 视频提音
+- 4-stem 分离
+- 分析 JSON 生成
+- `MIDI` 导出
+- `MusicXML` 导出
+- 网页时间轴工作台
+- 网页五线谱预览入口
+- 开发包 A：统一数据模型基础落地
+
+正在推进：
+- 自动评测
+- 版本管理
+- 自动调参与多轮迭代
+
+## 统一数据模型
+
+当前分析输出已升级为统一数据模型，并保留旧字段兼容现有前端与导出流程。
+
+新增的核心对象包括：
+- `inputAsset`
+- `stemCandidate`
+- `timingGrid`
+- `detailedNotes`
+- `notationCandidate`
+
+兼容保留的旧字段包括：
+- `sourceName`
+- `durationSec`
+- `bpm`
+- `timeSignature`
+- `beats`
+- `measures`
+- `notes`
+
+相关代码：
+- `analyzer/schemas.py`
+- `analyzer/main.py`
+- `web/types/domain.ts`
+- `web/types/analysis.ts`
 
 ## 目录说明
 
@@ -40,7 +65,7 @@
 - `samples/`：样本说明
 - `samples/raw/`：原始视频或混合音频输入
 - `output/`：提取音频、分离结果、分析 JSON、导出文件
-- `docs/`：阶段性方案和记录
+- `docs/`：产品、方法论和开发拆解文档
 
 ## 快速开始
 
@@ -54,7 +79,7 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r analyzer/requirements.txt
 ```
 
-### 2. 跑完整分析流水线
+### 2. 运行完整分析流水线
 
 先把素材放进 `samples/raw/`，例如 `samples/raw/test1.mp4`。
 
@@ -63,7 +88,6 @@ python -m venv .venv
 ```
 
 执行后会产出：
-
 - `output/extracted/`：提取出的音频
 - `output/separated/`：Demucs 分离结果
 - `output/analysis/`：分析 JSON
@@ -75,7 +99,6 @@ python -m venv .venv
 ```
 
 执行后会产出：
-
 - `output/exports/test1.mid`
 - `output/exports/test1.musicxml`
 
@@ -96,12 +119,12 @@ pnpm typecheck
 ## 当前推荐用法
 
 这个项目现在最适合用来做：
-
 - 短句节奏检查
-- solo 练习辅助
-- 生成一份可继续修的初稿
+- Solo 练习辅助
+- 生成一份可继续编辑的初稿
+- 比较不同 stem 对分析的影响
 
-它还不是完整的专业打谱软件，但已经能作为“减少手工扒谱时间”的原型工具使用。
+它还不是最终版自动出谱产品，但已经是一个可继续扩展的研发底座。
 
 ## 已验证样例
 
