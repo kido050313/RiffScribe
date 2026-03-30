@@ -7,6 +7,7 @@ from statistics import median
 from typing import Any
 
 from schemas import EvaluationOverall, EvaluationReport
+from task_store import materialize_version_artifacts
 
 
 REPORT_SCHEMA_VERSION = "evaluation.v1"
@@ -276,6 +277,7 @@ def main() -> None:
     report = build_report(analysis, args.input)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
+    artifact_paths = materialize_version_artifacts(repo_root, args.input, output_path)
 
     print(f"Wrote evaluation report to: {output_path}")
     print(
@@ -284,6 +286,7 @@ def main() -> None:
         f"pitch: {report['metrics']['pitch']['score']}"
     )
     print(f"Primary issues: {', '.join(report['diagnosis']['primaryIssues']) or 'none'}")
+    print(f"Version root: {artifact_paths.get('candidate', 'n/a')}")
 
 
 if __name__ == "__main__":

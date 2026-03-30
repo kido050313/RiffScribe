@@ -10,7 +10,7 @@
 - 运行 Demucs 分离
 - 把音频分析成 BPM、拍点、小节和音符事件
 - 生成最小评测报告
-- 将标准化 JSON 写入 `output/analysis/` 和 `output/tasks/`
+- 归档任务和版本结果
 - 导出 `MIDI` 和 `MusicXML`
 
 ## 当前脚本
@@ -18,7 +18,8 @@
 - `extract.py`：把本地媒体转换为可分析的 `wav`
 - `separate.py`：通过 Demucs Python API 做分离，并用 `soundfile` 保存 stem
 - `main.py`：把单个音频文件分析成统一结构 JSON
-- `evaluate.py`：根据分析 JSON 生成最小评测报告
+- `evaluate.py`：根据分析 JSON 生成最小评测报告，并触发版本归档
+- `task_store.py`：管理 `task.json`、版本目录和各类归档文件
 - `pipeline.py`：一条命令串起提音、分离和分析
 - `export.py`：把分析 JSON 导出成 `MIDI` 和 `MusicXML`
 - `schemas.py`：统一数据模型的数据类定义
@@ -53,6 +54,31 @@
 - `diagnosis.primaryIssues`
 - `adjustments.recommendedActions`
 
+## 开发包 C：版本管理最小实现
+
+现在每次运行 `evaluate.py` 后，会自动完成这些事情：
+- 写入 `evaluation-report.json`
+- 复制 `candidate.json` 到当前版本目录
+- 生成 `params.json`
+- 生成 `iteration-snapshot.json`
+- 如果已存在导出文件，则复制到当前版本目录
+- 更新 `output/tasks/<taskId>/task.json`
+
+当前版本目录结构：
+
+```txt
+output/tasks/<taskId>/
+  task.json
+  versions/
+    <versionId>/
+      candidate.json
+      evaluation-report.json
+      params.json
+      iteration-snapshot.json
+      export.mid
+      export.musicxml
+```
+
 ## 推荐使用方式
 
 先创建并使用项目虚拟环境：
@@ -74,7 +100,7 @@ python -m venv .venv
 .\.venv\Scripts\python.exe analyzer/main.py --input output/separated/htdemucs/test1/other.wav --output output/analysis/test1.analysis.json
 ```
 
-生成评测报告：
+生成评测报告并自动归档版本：
 
 ```powershell
 .\.venv\Scripts\python.exe analyzer/evaluate.py --input output/analysis/test1.analysis.json
@@ -93,6 +119,7 @@ python -m venv .venv
 - 如果分离效果不可用，pipeline 可以回退到提取出的混合音频继续分析
 - 当前分析器已经接入统一数据模型，但节奏和音高质量仍然属于 PoC 阶段
 - 当前评测器属于开发包 B 的最小实现，主要用于为后续调参与迭代引擎提供结构化输入
+- 当前版本管理器属于开发包 C 的最小实现，主要用于为后续多轮迭代保留任务级和版本级产物
 
 ## 正常输出结果
 
@@ -103,7 +130,11 @@ python -m venv .venv
 - `output/exports/` 中的 MIDI 和 MusicXML
 
 运行 `evaluate.py` 后，你应该能看到：
+- `output/tasks/<taskId>/task.json`
+- `output/tasks/<taskId>/versions/<versionId>/candidate.json`
 - `output/tasks/<taskId>/versions/<versionId>/evaluation-report.json`
+- `output/tasks/<taskId>/versions/<versionId>/params.json`
+- `output/tasks/<taskId>/versions/<versionId>/iteration-snapshot.json`
 
 ## 已验证示例
 
@@ -112,5 +143,6 @@ python -m venv .venv
 - 优先使用的 stem：`output/separated/htdemucs/test1/other.wav`
 - 分析输出：`output/analysis/test1.analysis.json`
 - 评测报告：`output/tasks/task_other/versions/ver_001/evaluation-report.json`
+- 任务索引：`output/tasks/task_other/task.json`
 - MIDI 导出：`output/exports/test1.mid`
 - MusicXML 导出：`output/exports/test1.musicxml`
