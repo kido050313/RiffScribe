@@ -156,6 +156,7 @@ export type EvaluationReport = {
 
 export type AdjustmentPlan = {
   adjustmentPlanId: EntityId;
+  schemaVersion?: string;
   taskId: EntityId;
   sourceVersionId: EntityId;
   targetVersionId: EntityId;
@@ -163,6 +164,7 @@ export type AdjustmentPlan = {
   actions: string[];
   parameterChanges?: Record<string, unknown>;
   expectedGoal?: string;
+  triggerIssues?: string[];
 };
 
 export type IterationSnapshotStatus =

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import shutil
@@ -21,6 +21,13 @@ def version_directory(repo_root: Path, task_id: str, version_id: str) -> Path:
 
 def task_index_path(repo_root: Path, task_id: str) -> Path:
     return repo_root / "output" / "tasks" / task_id / "task.json"
+
+
+def next_version_id_from(version_id: str) -> str:
+    prefix, _, suffix = version_id.partition("_")
+    if prefix and suffix.isdigit():
+        return f"{prefix}_{int(suffix) + 1:03d}"
+    return f"{version_id}_next"
 
 
 def export_paths_for_analysis(repo_root: Path, analysis_path: Path) -> dict[str, Path]:
@@ -55,6 +62,11 @@ def build_params_snapshot(analysis: dict[str, Any]) -> dict[str, Any]:
         },
         "filtering": {
             "minNoteDurationBeats": 0.25,
+        },
+        "beatTracking": {
+            "strategy": "librosa_default",
+            "tightness": 100,
+            "startMeasureOffsetBeats": 0.0,
         },
     }
 
@@ -177,3 +189,57 @@ def materialize_version_artifacts(
     artifact_paths["taskIndex"] = str(index_path)
 
     return {key: value for key, value in artifact_paths.items() if value}
+
+
+def attach_adjustment_plan(
+    repo_root: Path,
+    task_id: str,
+    version_id: str,
+    adjustment_plan: dict[str, Any],
+    next_params: dict[str, Any],
+) -> dict[str, str]:
+    version_root = version_directory(repo_root, task_id, version_id)
+    version_root.mkdir(parents=True, exist_ok=True)
+
+    adjustment_path = version_root / "adjustment-plan.json"
+    next_params_path = version_root / "next-params.json"
+    save_json(adjustment_path, adjustment_plan)
+    save_json(next_params_path, next_params)
+
+    index_path = task_index_path(repo_root, task_id)
+    if index_path.exists():
+        task_payload = load_json(index_path)
+    else:
+        task_payload = {
+            "taskId": task_id,
+            "status": "active",
+            "latestVersionId": version_id,
+            "bestVersionId": version_id,
+            "stableVersionId": version_id,
+            "versionIds": [version_id],
+            "versions": {},
+        }
+
+    version_entry = task_payload.setdefault("versions", {}).setdefault(
+        version_id,
+        {
+            "versionId": version_id,
+            "iterationIndex": len(task_payload.get("versionIds", [])) or 1,
+            "status": "completed",
+            "paths": {
+                "versionRoot": str(version_root),
+            },
+        },
+    )
+    version_entry["adjustmentPlanId"] = adjustment_plan.get("adjustmentPlanId")
+    version_entry["targetVersionId"] = adjustment_plan.get("targetVersionId")
+    version_entry["plannedActions"] = adjustment_plan.get("actions", [])
+    version_entry.setdefault("paths", {})["adjustmentPlan"] = str(adjustment_path)
+    version_entry.setdefault("paths", {})["nextParams"] = str(next_params_path)
+
+    save_json(index_path, task_payload)
+    return {
+        "adjustmentPlan": str(adjustment_path),
+        "nextParams": str(next_params_path),
+        "taskIndex": str(index_path),
+    }

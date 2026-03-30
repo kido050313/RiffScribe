@@ -135,3 +135,19 @@ class EvaluationReport:
         payload = asdict(self)
         payload["overall"] = self.overall.to_dict()
         return payload
+
+
+@dataclass(slots=True)
+class AdjustmentPlan:
+    adjustmentPlanId: str
+    taskId: str
+    sourceVersionId: str
+    targetVersionId: str
+    priority: str | None = None
+    actions: list[str] = field(default_factory=list)
+    parameterChanges: dict[str, Any] = field(default_factory=dict)
+    expectedGoal: str | None = None
+    triggerIssues: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)

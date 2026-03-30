@@ -11,6 +11,7 @@
 - 把音频分析成 BPM、拍点、小节和音符事件
 - 生成最小评测报告
 - 归档任务和版本结果
+- 根据评测报告生成自动调整计划和下一轮参数草案
 - 导出 `MIDI` 和 `MusicXML`
 
 ## 当前脚本
@@ -19,6 +20,7 @@
 - `separate.py`：通过 Demucs Python API 做分离，并用 `soundfile` 保存 stem
 - `main.py`：把单个音频文件分析成统一结构 JSON
 - `evaluate.py`：根据分析 JSON 生成最小评测报告，并触发版本归档
+- `adjustments.py`：根据评测报告和当前参数生成调整计划与下一轮参数草案
 - `task_store.py`：管理 `task.json`、版本目录和各类归档文件
 - `pipeline.py`：一条命令串起提音、分离和分析
 - `export.py`：把分析 JSON 导出成 `MIDI` 和 `MusicXML`
@@ -54,6 +56,13 @@
 - `diagnosis.primaryIssues`
 - `adjustments.recommendedActions`
 
+`adjustments.py` 当前会生成最小调整计划，包含：
+- `actions`
+- `parameterChanges`
+- `expectedGoal`
+- `targetVersionId`
+- `triggerIssues`
+
 ## 开发包 C：版本管理最小实现
 
 现在每次运行 `evaluate.py` 后，会自动完成这些事情：
@@ -64,20 +73,22 @@
 - 如果已存在导出文件，则复制到当前版本目录
 - 更新 `output/tasks/<taskId>/task.json`
 
-当前版本目录结构：
+## 开发包 D：自动调参最小实现
 
-```txt
-output/tasks/<taskId>/
-  task.json
-  versions/
-    <versionId>/
-      candidate.json
-      evaluation-report.json
-      params.json
-      iteration-snapshot.json
-      export.mid
-      export.musicxml
-```
+现在每次运行 `adjustments.py` 后，会自动完成这些事情：
+- 读取 `evaluation-report.json`
+- 读取当前版本 `params.json`
+- 根据问题和优先级映射选择 1 到 2 个动作
+- 生成 `adjustment-plan.json`
+- 生成 `next-params.json`
+- 把计划和目标版本写回 `task.json`
+
+当前已实现动作：
+- `switch_input_stem`
+- `retune_beat_tracking`
+- `increase_min_note_duration`
+- `limit_pitch_range`
+- `fix_measure_alignment`
 
 ## 推荐使用方式
 
@@ -106,6 +117,12 @@ python -m venv .venv
 .\.venv\Scripts\python.exe analyzer/evaluate.py --input output/analysis/test1.analysis.json
 ```
 
+生成调整计划和下一轮参数草案：
+
+```powershell
+.\.venv\Scripts\python.exe analyzer/adjustments.py --report output/tasks/task_other/versions/ver_001/evaluation-report.json --params output/tasks/task_other/versions/ver_001/params.json --task-index output/tasks/task_other/task.json
+```
+
 导出 MIDI 和 MusicXML：
 
 ```powershell
@@ -120,6 +137,7 @@ python -m venv .venv
 - 当前分析器已经接入统一数据模型，但节奏和音高质量仍然属于 PoC 阶段
 - 当前评测器属于开发包 B 的最小实现，主要用于为后续调参与迭代引擎提供结构化输入
 - 当前版本管理器属于开发包 C 的最小实现，主要用于为后续多轮迭代保留任务级和版本级产物
+- 当前调整计划器属于开发包 D 的最小实现，主要用于为下一轮版本生成参数草案，不会自动重跑分析
 
 ## 正常输出结果
 
@@ -136,6 +154,10 @@ python -m venv .venv
 - `output/tasks/<taskId>/versions/<versionId>/params.json`
 - `output/tasks/<taskId>/versions/<versionId>/iteration-snapshot.json`
 
+运行 `adjustments.py` 后，你应该能看到：
+- `output/tasks/<taskId>/versions/<versionId>/adjustment-plan.json`
+- `output/tasks/<taskId>/versions/<versionId>/next-params.json`
+
 ## 已验证示例
 
 - 输入：`samples/raw/test1.mp4`
@@ -143,6 +165,8 @@ python -m venv .venv
 - 优先使用的 stem：`output/separated/htdemucs/test1/other.wav`
 - 分析输出：`output/analysis/test1.analysis.json`
 - 评测报告：`output/tasks/task_other/versions/ver_001/evaluation-report.json`
+- 调整计划：`output/tasks/task_other/versions/ver_001/adjustment-plan.json`
+- 下一轮参数：`output/tasks/task_other/versions/ver_001/next-params.json`
 - 任务索引：`output/tasks/task_other/task.json`
 - MIDI 导出：`output/exports/test1.mid`
 - MusicXML 导出：`output/exports/test1.musicxml`

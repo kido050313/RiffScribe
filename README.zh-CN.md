@@ -12,8 +12,9 @@
 5. 分析 BPM、拍点、小节和音符事件
 6. 自动生成最小评测报告
 7. 自动归档任务和版本产物
-8. 在网页工作台中播放、查看、循环和导出
-9. 导出 `MIDI` 和 `MusicXML`
+8. 自动生成调整计划和下一轮参数草案
+9. 在网页工作台中播放、查看、循环和导出
+10. 导出 `MIDI` 和 `MusicXML`
 
 ## 当前阶段
 
@@ -26,13 +27,14 @@
 - 开发包 A：统一数据模型基础落地
 - 开发包 B：最小评测实现
 - 开发包 C：版本管理最小实现
+- 开发包 D：自动调参最小实现
 - `MIDI` 导出
 - `MusicXML` 导出
 - 网页时间轴工作台
 - 网页五线谱预览入口
 
 正在推进：
-- 自动调参与多轮迭代
+- 多轮迭代引擎
 
 ## 统一数据模型
 
@@ -90,13 +92,31 @@
 相关代码：
 - `analyzer/task_store.py`
 
+## 最小自动调参
+
+当前已新增调整计划生成能力。
+
+每次运行 `adjustments.py` 后，系统会自动生成：
+- `output/tasks/<taskId>/versions/<versionId>/adjustment-plan.json`
+- `output/tasks/<taskId>/versions/<versionId>/next-params.json`
+
+当前已实现动作：
+- `switch_input_stem`
+- `retune_beat_tracking`
+- `increase_min_note_duration`
+- `limit_pitch_range`
+- `fix_measure_alignment`
+
+相关代码：
+- `analyzer/adjustments.py`
+
 ## 目录说明
 
-- `analyzer/`：Python 分析脚本，负责提音、分离、分析、评测、归档、导出
+- `analyzer/`：Python 分析脚本，负责提音、分离、分析、评测、归档、调参、导出
 - `web/`：Next.js 前端原型
 - `samples/`：样本说明
 - `samples/raw/`：原始视频或混合音频输入
-- `output/`：提取音频、分离结果、分析 JSON、评测报告、任务归档、导出文件
+- `output/`：提取音频、分离结果、分析 JSON、评测报告、任务归档、调整计划、导出文件
 - `docs/`：产品、方法论和开发拆解文档
 
 ## 快速开始
@@ -137,7 +157,17 @@ python -m venv .venv
 - `output/tasks/task_other/versions/ver_001/params.json`
 - `output/tasks/task_other/versions/ver_001/iteration-snapshot.json`
 
-### 4. 导出 MIDI 和 MusicXML
+### 4. 生成调整计划和下一轮参数草案
+
+```powershell
+.\.venv\Scripts\python.exe analyzer/adjustments.py --report output/tasks/task_other/versions/ver_001/evaluation-report.json --params output/tasks/task_other/versions/ver_001/params.json --task-index output/tasks/task_other/task.json
+```
+
+执行后会产出：
+- `output/tasks/task_other/versions/ver_001/adjustment-plan.json`
+- `output/tasks/task_other/versions/ver_001/next-params.json`
+
+### 5. 导出 MIDI 和 MusicXML
 
 ```powershell
 .\.venv\Scripts\python.exe analyzer/export.py --input output/analysis/test1.analysis.json
@@ -147,7 +177,7 @@ python -m venv .venv
 - `output/exports/test1.mid`
 - `output/exports/test1.musicxml`
 
-### 5. 启动前端
+### 6. 启动前端
 
 ```powershell
 cd web
@@ -170,6 +200,7 @@ pnpm typecheck
 - 比较不同 stem 对分析的影响
 - 为后续自动调参与迭代引擎提供结构化评测输入
 - 为后续多轮迭代保留完整版本产物
+- 为下一轮自动重跑提供参数草案
 
 它还不是最终版自动出谱产品，但已经是一个可继续扩展的研发底座。
 
@@ -180,6 +211,8 @@ pnpm typecheck
 - 候选 stem：`output/separated/htdemucs/test1/other.wav`
 - 分析结果：`output/analysis/test1.analysis.json`
 - 评测报告：`output/tasks/task_other/versions/ver_001/evaluation-report.json`
+- 调整计划：`output/tasks/task_other/versions/ver_001/adjustment-plan.json`
+- 下一轮参数：`output/tasks/task_other/versions/ver_001/next-params.json`
 - 任务索引：`output/tasks/task_other/task.json`
 - MIDI：`output/exports/test1.mid`
 - MusicXML：`output/exports/test1.musicxml`
