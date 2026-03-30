@@ -27,6 +27,12 @@ A4_MIDI = 69
 A4_HZ = 440.0
 
 
+def load_params(path: Path | None) -> dict[str, Any]:
+    if path is None:
+        return {}
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 def find_default_sample(samples_dir: Path) -> Path | None:
     supported_suffixes = {".wav", ".mp3", ".flac", ".m4a", ".ogg"}
     for path in sorted(samples_dir.iterdir()):
@@ -97,11 +103,15 @@ def build_notes(
     measures: list[Measure],
     task_id: str,
     version_id: str,
+    params: dict[str, Any],
 ) -> list[DetailedNote]:
     notes: list[DetailedNote] = []
     if onsets.size == 0:
         return notes
 
+    start_measure_offset_beats = float(
+        params.get("beatTracking", {}).get("startMeasureOffsetBeats", 0.0)
+    )
     onset_times = librosa.frames_to_time(onsets, sr=sample_rate)
     for index, start_time in enumerate(onset_times):
         next_time = float(onset_times[index + 1]) if index + 1 < len(onset_times) else float(duration_sec)
@@ -113,7 +123,7 @@ def build_notes(
 
         measure_index = find_measure_index(float(start_time), measures)
         measure_start = measures[measure_index].start if measures else 0.0
-        beat_offset = (float(start_time) - float(measure_start)) / beat_duration if beat_duration > 0 else 0.0
+        beat_offset = ((float(start_time) - float(measure_start)) / beat_duration + start_measure_offset_beats) if beat_duration > 0 else 0.0
         duration_beats = raw_duration / beat_duration if beat_duration > 0 else 0.0
 
         notes.append(
@@ -132,6 +142,46 @@ def build_notes(
             )
         )
     return notes
+
+
+def postprocess_notes(notes: list[DetailedNote], params: dict[str, Any]) -> list[DetailedNote]:
+    filtering = params.get("filtering", {})
+    pitch_range = params.get("pitchRange", {})
+    min_duration_beats = float(filtering.get("minNoteDurationBeats", 0.25))
+    lower_pitch = int(pitch_range.get("lower", 40))
+    upper_pitch = int(pitch_range.get("upper", 88))
+
+    filtered = [
+        note
+        for note in notes
+        if note.durationBeats >= min_duration_beats and lower_pitch <= note.midiPitch <= upper_pitch
+    ]
+
+    if not filtered:
+        filtered = notes
+
+    normalized: list[DetailedNote] = []
+    for index, note in enumerate(filtered, start=1):
+        normalized.append(
+            DetailedNote(
+                noteId=f"note_{index:03d}",
+                taskId=note.taskId,
+                versionId=note.versionId,
+                start=note.start,
+                end=note.end,
+                midiPitch=note.midiPitch,
+                measureIndex=note.measureIndex,
+                beatOffset=note.beatOffset,
+                durationBeats=note.durationBeats,
+                phraseId=note.phraseId,
+                parentBackboneId=note.parentBackboneId,
+                noteClass=note.noteClass,
+                confidence=note.confidence,
+                stringCandidate=note.stringCandidate,
+                fretCandidate=note.fretCandidate,
+            )
+        )
+    return normalized
 
 
 def infer_asset_type(audio_path: Path) -> str:
@@ -156,18 +206,51 @@ def derive_stem_type(audio_path: Path) -> str:
     return "extracted"
 
 
-def build_analysis_result(audio_path: Path) -> dict[str, Any]:
-    task_id = derive_task_id(audio_path)
-    version_id = derive_version_id()
-    asset_id = f"asset_{audio_path.stem}"
-    stem_id = f"stem_{audio_path.stem}"
-    timing_grid_id = f"grid_{audio_path.stem}"
-    notation_id = f"notation_{audio_path.stem}"
+def resolve_audio_path(audio_path: Path, params: dict[str, Any]) -> Path:
+    selected_stem = params.get("selectedStem")
+    if not selected_stem:
+        return audio_path
 
-    signal, sample_rate = librosa.load(audio_path, sr=None, mono=True)
+    current_stem = derive_stem_type(audio_path)
+    if selected_stem == current_stem:
+        return audio_path
+
+    if selected_stem in {"other", "vocals", "bass", "drums"}:
+        sibling = audio_path.with_name(f"{selected_stem}.wav")
+        if sibling.exists():
+            return sibling
+
+    if selected_stem == "extracted":
+        match = next((part for part in audio_path.parts if part.startswith("test")), None)
+        if match:
+            extracted_path = audio_path.parents[3] / "extracted" / f"{match}.wav"
+            if extracted_path.exists():
+                return extracted_path
+
+    return audio_path
+
+
+def build_analysis_result(
+    audio_path: Path,
+    params: dict[str, Any] | None = None,
+    task_id_override: str | None = None,
+    version_id_override: str | None = None,
+) -> dict[str, Any]:
+    params = params or {}
+    resolved_audio_path = resolve_audio_path(audio_path, params)
+
+    task_id = task_id_override or derive_task_id(resolved_audio_path)
+    version_id = version_id_override or derive_version_id()
+    asset_id = f"asset_{resolved_audio_path.stem}"
+    stem_id = f"stem_{resolved_audio_path.stem}"
+    timing_grid_id = f"grid_{resolved_audio_path.stem}_{version_id}"
+    notation_id = f"notation_{resolved_audio_path.stem}_{version_id}"
+
+    signal, sample_rate = librosa.load(resolved_audio_path, sr=None, mono=True)
     duration_sec = float(librosa.get_duration(y=signal, sr=sample_rate))
 
-    tempo, beat_frames = librosa.beat.beat_track(y=signal, sr=sample_rate, units="frames")
+    tightness = int(params.get("beatTracking", {}).get("tightness", 100))
+    tempo, beat_frames = librosa.beat.beat_track(y=signal, sr=sample_rate, units="frames", tightness=tightness)
     bpm = float(tempo.item() if hasattr(tempo, "item") else tempo)
     beat_times = [round(float(beat), 4) for beat in librosa.frames_to_time(beat_frames, sr=sample_rate)]
 
@@ -190,26 +273,28 @@ def build_analysis_result(audio_path: Path) -> dict[str, Any]:
         measures=measures,
         task_id=task_id,
         version_id=version_id,
+        params=params,
     )
+    notes = postprocess_notes(notes, params)
 
     input_asset = InputAsset(
         assetId=asset_id,
         taskId=task_id,
-        path=str(audio_path),
-        type=infer_asset_type(audio_path),
+        path=str(resolved_audio_path),
+        type=infer_asset_type(resolved_audio_path),
         durationSec=round(duration_sec, 4),
         sampleRate=sample_rate,
         channels=1,
-        sourceLabel=audio_path.name,
-        metadata={"sourceName": audio_path.name},
+        sourceLabel=resolved_audio_path.name,
+        metadata={"sourceName": resolved_audio_path.name},
     )
     stem_candidate = StemCandidate(
         stemId=stem_id,
         taskId=task_id,
         versionId=version_id,
         sourceAssetId=asset_id,
-        stemType=derive_stem_type(audio_path),
-        path=str(audio_path),
+        stemType=derive_stem_type(resolved_audio_path),
+        path=str(resolved_audio_path),
         durationSec=round(duration_sec, 4),
         qualityScore=1.0,
         selectionReason="selected_for_analysis",
@@ -250,8 +335,7 @@ def build_analysis_result(audio_path: Path) -> dict[str, Any]:
         "timingGrid": timing_grid.to_dict(),
         "detailedNotes": legacy_notes,
         "notationCandidate": notation_candidate.to_dict(),
-        # Compatibility fields used by the current web prototype and export pipeline.
-        "sourceName": audio_path.name,
+        "sourceName": resolved_audio_path.name,
         "durationSec": round(duration_sec, 4),
         "bpm": round(bpm, 2),
         "timeSignature": DEFAULT_TIME_SIGNATURE,
@@ -273,6 +357,9 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         help="Path to the output JSON file. Defaults to output/analysis-result.json.",
     )
+    parser.add_argument("--params", type=Path, help="Optional params.json path to influence analysis output.")
+    parser.add_argument("--task-id", type=str, help="Optional taskId override.")
+    parser.add_argument("--version-id", type=str, help="Optional versionId override.")
     return parser.parse_args()
 
 
@@ -289,11 +376,17 @@ def main() -> None:
     if not input_path.exists():
         raise SystemExit(f"Input audio not found: {input_path}")
 
-    result = build_analysis_result(input_path)
+    params = load_params(args.params)
+    result = build_analysis_result(
+        input_path,
+        params=params,
+        task_id_override=args.task_id,
+        version_id_override=args.version_id,
+    )
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
+    output_path.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
 
-    print(f"Analyzed {input_path.name}")
+    print(f"Analyzed {result['sourceName']}")
     print(f"Wrote analysis to: {output_path}")
     print(f"BPM: {result['bpm']}, beats: {len(result['beats'])}, notes: {len(result['notes'])}")
 

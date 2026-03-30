@@ -29,14 +29,6 @@ output/tasks/<taskId>/
       export.musicxml
 ```
 
-其中：
-- `task.json`：任务级索引，维护 `latestVersionId`、`bestVersionId`、`stableVersionId` 和版本列表
-- `candidate.json`：当前版本对应的候选谱分析结果
-- `evaluation-report.json`：当前版本的评测报告
-- `params.json`：当前版本的参数快照
-- `iteration-snapshot.json`：当前版本的最小状态快照
-- `export.mid` / `export.musicxml`：当前版本绑定的导出文件
-
 ## 开发包 D：自动调参最小实现
 
 现在每次运行 `analyzer/adjustments.py` 后，系统会自动在当前版本目录中补充：
@@ -47,22 +39,40 @@ output/tasks/<taskId>/versions/<versionId>/
   next-params.json
 ```
 
-其中：
-- `adjustment-plan.json`：当前版本针对下一轮的动作计划
-- `next-params.json`：当前计划生成的下一轮参数草案
+## 开发包 E：最小迭代引擎
 
-同时 `task.json` 中会补充：
-- `adjustmentPlanId`
-- `targetVersionId`
-- `plannedActions`
-- `paths.adjustmentPlan`
-- `paths.nextParams`
+现在每次运行 `analyzer/iterate.py` 后，系统会自动生成下一轮版本，并补充：
+
+```txt
+output/analysis/
+  <taskId>.<nextVersionId>.analysis.json
+
+output/tasks/<taskId>/
+  comparisons/
+    <sourceVersionId>__<targetVersionId>.json
+  versions/
+    <nextVersionId>/
+      candidate.json
+      evaluation-report.json
+      params.json
+      iteration-snapshot.json
+      export.mid
+      export.musicxml
+```
+
+同时 `task.json` 会更新：
+- `latestVersionId`
+- `bestVersionId`
+- `stableVersionId`
+- `versionIds`
+- 新版本条目及其比较路径、父版本信息
 
 ## 当前已验证文件
 
 - `output/extracted/test1.wav`
 - `output/separated/htdemucs/test1/other.wav`
 - `output/analysis/test1.analysis.json`
+- `output/analysis/task_other.ver_002.analysis.json`
 - `output/exports/test1.mid`
 - `output/exports/test1.musicxml`
 - `output/tasks/task_other/task.json`
@@ -72,6 +82,10 @@ output/tasks/<taskId>/versions/<versionId>/
 - `output/tasks/task_other/versions/ver_001/iteration-snapshot.json`
 - `output/tasks/task_other/versions/ver_001/adjustment-plan.json`
 - `output/tasks/task_other/versions/ver_001/next-params.json`
+- `output/tasks/task_other/versions/ver_002/candidate.json`
+- `output/tasks/task_other/versions/ver_002/evaluation-report.json`
+- `output/tasks/task_other/versions/ver_002/params.json`
+- `output/tasks/task_other/comparisons/ver_001__ver_002.json`
 
 ## 这些文件分别代表什么
 
@@ -81,5 +95,6 @@ output/tasks/<taskId>/versions/<versionId>/
 - 评测报告：供调参与迭代引擎使用的结构化判断
 - 调整计划：供下一轮版本生成参数草案
 - 下一轮参数：供后续自动重跑分析时直接使用
+- 比较文件：记录相邻两轮版本的得分变化与是否提升
 - 任务目录：供自动闭环保存多轮版本和做版本比较的基础结构
 - 导出文件：基于分析结果生成的可交换谱面文件
